@@ -16,6 +16,7 @@ use League\OAuth2\Server\Entity\ScopeEntity;
 use League\OAuth2\Server\Entity\AccessTokenEntity;
 use League\OAuth2\Server\Storage\AccessTokenInterface;
 use Carbon\Carbon;
+use League\OAuth2\Server\Exception\ServerErrorException;
 
 class FluentAccessToken extends FluentAdapter implements AccessTokenInterface
 {
@@ -24,9 +25,10 @@ class FluentAccessToken extends FluentAdapter implements AccessTokenInterface
       */
     public function get($token)
     {
-        $result = $this->getConnection()->table('oauth_access_tokens')
-                ->where('id', $token)
-                ->first();
+        $result = DB::collection('oauth_sessions')
+            ->where('access_token.id', $token)
+            ->select('access_token')
+            ->first();
 
         if (is_null($result)) {
             return null;
@@ -42,24 +44,19 @@ class FluentAccessToken extends FluentAdapter implements AccessTokenInterface
       */
     public function getScopes(AccessTokenEntity $token)
     {
-        $result = $this->getConnection()->table('oauth_access_token_scopes')
-                ->where('access_token_id', $token->getId())
-                ->get();
-        
+        $result = DB::collection('oauth_sessions')
+            ->where('access_token.id', $token->getId())
+            ->select('access_token.scopes')
+            ->first();
+
         $scopes = [];
-        
+
         foreach ($result as $accessTokenScope) {
-
-            $scope = $this->getConnection()->table('oauth_scopes')
-                ->where('id', $accessTokenScope['scope_id'])
-                ->get();
-
             $scopes[] = (new ScopeEntity($this->getServer()))->hydrate([
                 'id' => $scope['id'],
-                'description' => $scope['description']
             ]);
         }
-        
+
         return $scopes;
     }
 
@@ -68,13 +65,21 @@ class FluentAccessToken extends FluentAdapter implements AccessTokenInterface
       */
     public function create($token, $expireTime, $sessionId)
     {
-        $this->getConnection()->table('oauth_access_tokens')->insert([
-            'id' => $token,
-            'expire_time' => $expireTime,
-            'session_id' => $sessionId,
-            'created_at' => Carbon::now(),
-            'updated_at' => Carbon::now()
-        ]);
+
+        $ok = DB::collections('oauth_sessions')
+            ->where('id', $sessionId)
+            ->update([
+                'access_token' => [
+                    'id' => $token,
+                    'expire_time' => $expireTime,
+                    'created_at' => Carbon::now(),
+                    'updated_at' => Carbon::now(),
+                ],
+            ]);
+
+        if($ok == 0) {
+            throw new ServerErrorException('unable to create access token: no session exists');
+        }
 
         return (new AccessTokenEntity($this->getServer()))
                ->setId($token)
@@ -86,12 +91,12 @@ class FluentAccessToken extends FluentAdapter implements AccessTokenInterface
       */
     public function associateScope(AccessTokenEntity $token, ScopeEntity $scope)
     {
-        $this->getConnection()->table('oauth_access_token_scopes')->insert([
-            'access_token_id' => $token->getId(),
-            'scope_id'        => $scope->getId(),
-            'created_at'      => Carbon::now(),
-            'updated_at'      => Carbon::now()
-        ]);
+        DB::collections('oauth_sessions')
+            ->where('access_token.id', $token)
+            ->push('access_token.scopes', [
+                'id'        => $scope->getId(),
+                'created_at'      => Carbon::now(),
+            ]);
     }
 
     /**
@@ -99,8 +104,8 @@ class FluentAccessToken extends FluentAdapter implements AccessTokenInterface
       */
     public function delete(AccessTokenEntity $token)
     {
-       $this->getConnection()->table('oauth_access_tokens')
-        ->where('id', $token->getId())
-        ->delete();
+        DB::collections('oauth_sessions')
+            ->where('access_token.id', $token->getId())
+            ->unset('access_token');
     }
 }

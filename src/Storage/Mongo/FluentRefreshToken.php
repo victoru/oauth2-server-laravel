@@ -24,19 +24,21 @@ class FluentRefreshToken extends FluentAdapter implements RefreshTokenInterface
      */
     public function get($token)
     {
-        $result = $this->getConnection()->table('oauth_refresh_tokens')
-                ->where('id', $token)
-                ->where('expire_time', '>=', time())
-                ->first();
+
+        $result = DB::collection('oauth_sessions')
+            ->where('access_token.refresh.id', $token)
+            ->where('access_token.refresh.expire_time', '>=', time())
+            ->select('acces_token')
+            ->first();
 
         if (is_null($result)) {
             return null;
         }
 
         return (new RefreshTokenEntity($this->getServer()))
-               ->setId($result['id'])
-               ->setAccessTokenId($result['access_token_id'])
-               ->setExpireTime((int)$result['expire_time']);
+               ->setId($result['refresh']['id'])
+               ->setAccessTokenId($result['id'])
+               ->setExpireTime((int)$result['refresh']['expire_time']);
     }
 
     /**
@@ -48,12 +50,14 @@ class FluentRefreshToken extends FluentAdapter implements RefreshTokenInterface
      */
     public function create($token, $expireTime, $accessToken)
     {
-        $this->getConnection()->table('oauth_refresh_tokens')->insert([
-            'id'              => $token,
-            'expire_time'     => $expireTime,
-            'access_token_id' => $accessToken,
-            'created_at' => Carbon::now(),
-            'updated_at' => Carbon::now()
+        DB::collection('oauth_sessions')
+        ->where('access_token.id', $accessToken)
+        ->update([
+            'access_token.refresh' => [
+                'id'              => $token,
+                'expire_time'     => $expireTime,
+                'created_at' => Carbon::now(),
+            ]
         ]);
 
         return (new RefreshTokenEntity($this->getServer()))
@@ -69,8 +73,8 @@ class FluentRefreshToken extends FluentAdapter implements RefreshTokenInterface
      */
     public function delete(RefreshTokenEntity $token)
     {
-        $this->getConnection()->table('oauth_refresh_tokens')
-        ->where('id', $token->getId())
-        ->delete();
+        DB::collection('oauth_sessions')
+            ->where('access_token.refresh.id', $token->getId())
+            ->unset('access_token.refresh');
     }
 }

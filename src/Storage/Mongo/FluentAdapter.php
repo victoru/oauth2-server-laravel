@@ -51,4 +51,4 @@ abstract class FluentAdapter extends AbstractStorage
     {
         return $this->resolver->connection($this->connectionName);
     }
-} 
+}

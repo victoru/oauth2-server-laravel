@@ -25,9 +25,10 @@ class FluentAuthCode extends FluentAdapter implements AuthCodeInterface
      */
     public function get($code)
     {
-        $result = $this->getConnection()->table('oauth_auth_codes')
-            ->where('id', $code)
-            ->where('expire_time', '>=', time())
+        $result = DB::collection('oauth_sessions')
+            ->where('auth_code.id', $code)
+            ->where('auth_code.expire_time', '>=', time())
+            ->select('auth_code')
             ->first();
 
         if (is_null($result)) {
@@ -47,21 +48,17 @@ class FluentAuthCode extends FluentAdapter implements AuthCodeInterface
      */
     public function getScopes(AuthCodeEntity $token)
     {
-        $result = $this->getConnection()->table('oauth_auth_code_scopes')
-            ->where('auth_code_id', $token->getId())
-            ->get();
+        $result = DB::collection('oauth_sessions')
+            ->where('auth_code.id', $token->getId())
+            ->select('auth_code.scopes')
+            ->first();
 
         $scopes = [];
 
-        foreach ($result as $authCodeScope) {
-
-            $scope = $this->getConnection()->table('oauth_scopes')
-                ->where('id', $authCodeScope['scope_id'])
-                ->get();
+        foreach ($result as $scope) {
 
             $scopes[] = (new ScopeEntity($this->getServer()))->hydrate([
                'id' => $scope['id'],
-                'description' => $scope['description']
             ]);
         }
 
@@ -76,12 +73,12 @@ class FluentAuthCode extends FluentAdapter implements AuthCodeInterface
      */
     public function associateScope(AuthCodeEntity $token, ScopeEntity $scope)
     {
-        $this->getConnection()->table('oauth_auth_code_scopes')->insert([
-            'auth_code_id'    => $token->getId(),
-            'scope_id'        => $scope->getId(),
-            'created_at'      => Carbon::now(),
-            'updated_at'      => Carbon::now()
-        ]);
+        DB::collection('oauth_sessions')
+            ->where('auth_code.id', $token->getId())
+            ->push('auth_code.scopes', [
+                'id' => $scope->getId(),
+                'created_at'      => Carbon::now(),
+            ]);
     }
 
     /**
@@ -91,9 +88,9 @@ class FluentAuthCode extends FluentAdapter implements AuthCodeInterface
      */
     public function delete(AuthCodeEntity $token)
     {
-        $this->getConnection()->table('oauth_auth_codes')
-        ->where('id', $token->getId())
-        ->delete();
+        DB::collection('oauth_sessions')
+            ->where('auth_code.id', $token->getId())
+            ->unset('auth_code');
     }
 
 
@@ -108,13 +105,20 @@ class FluentAuthCode extends FluentAdapter implements AuthCodeInterface
      */
     public function create($token, $expireTime, $sessionId, $redirectUri)
     {
-        $this->getConnection()->table('oauth_auth_codes')->insert([
-            'id'              => $token,
-            'session_id'      => $sessionId,
-            'redirect_uri'    => $redirectUri,
-            'expire_time'     => $expireTime,
-            'created_at' => Carbon::now(),
-            'updated_at' => Carbon::now()
-        ]);
+        $ok = DB::collection('oauth_sessions')
+            ->where('id', $sessionId)
+            ->update([
+                'auth_code' => [
+                    'id'              => $token,
+                    'redirect_uri'    => $redirectUri,
+                    'expire_time'     => $expireTime,
+                    'created_at' => Carbon::now(),
+                    'updated_at' => Carbon::now()
+                ]
+            ]);
+
+        if($ok == 0) {
+            throw new ServerErrorException('unable to create auth code: no session exists');
+        }
     }
 }

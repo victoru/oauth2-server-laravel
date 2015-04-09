@@ -27,9 +27,9 @@ class FluentSession extends FluentAdapter implements SessionInterface
      */
     public function get($sessionId)
     {
-        $result = $this->getConnection()->table('oauth_sessions')
-                    ->where('id', $sessionId)
-                    ->first();
+        $result = DB::collection('oauth_sessions')
+            ->where('id', $sessionId)
+            ->first();
 
         if(is_null($result)) {
             return null;
@@ -47,13 +47,9 @@ class FluentSession extends FluentAdapter implements SessionInterface
      */
     public function getByAccessToken(AccessTokenEntity $accessToken)
     {
-        $allowedSessionIds = $this->getConnection()->table('oauth_access_tokens')
-                   ->where('id', $accessToken->getId())
-                   ->pluck('session_id');
-
-        $result = $this->getConnection()->table('oauth_sessions')
-                ->whereIn('id', $allowedSessionIds)
-                ->first();
+        $result = DB::collection('oauth_sessions')
+                   ->where('access_token.id', $accessToken->getId())
+                   ->first();
 
         if (is_null($result)) {
             return null;
@@ -71,25 +67,29 @@ class FluentSession extends FluentAdapter implements SessionInterface
      */
     public function getScopes(SessionEntity $session)
     {
-        // TODO: Check this before pushing
-        $result = $this->getConnection()->table('oauth_session_scopes')
-                  ->where('session_id', $session->getId())
-                  ->get();
-        
+        $result = DB::collection('oauth_sessions')
+                  ->where('id', $session->getId())
+                  ->first();
+
         $scopes = [];
-        
-        foreach ($result as $sessionScope) {
 
-            $scope = $this->getConnection()->table('oauth_scopes')
-                ->where('id', $accessTokenScope['scope_id'])
-                ->get();
+        //TODO: better scope checking?
+        $sessionScopes = [
+            @$result['scopes'],
+            @$result['access_token.scopes'],
+        ];
 
-            $scopes[] = (new ScopeEntity($this->getServer()))->hydrate([
-                'id' => $scope['id'],
-                'description' => $scope['description'],
-            ]);
+        if (is_null($result))
+            return null;
+
+        foreach ($sessionScopeLists as $sessionScopes) {
+            foreach ($sessionScopes as $scope) {
+                $scopes[] = (new ScopeEntity($this->getServer()))->hydrate([
+                    'id' => $scope['id'],
+                ]);
+            }
         }
-        
+
         return $scopes;
     }
 
@@ -103,14 +103,15 @@ class FluentSession extends FluentAdapter implements SessionInterface
      */
     public function create($ownerType, $ownerId, $clientId, $clientRedirectUri = null)
     {
-        return $this->getConnection()->table('oauth_sessions')->insertGetId([
-            'client_id'  => $clientId,
-            'owner_type' => $ownerType,
-            'owner_id'   => $ownerId,
-            'client_redirect_uri' => $clientRedirectUri,
-            'created_at' => Carbon::now(),
-            'updated_at' => Carbon::now()
-        ]);
+        return DB::collections('oauth_sessions')
+            ->insertGetId([
+                'client_id'  => $clientId,
+                'owner_type' => $ownerType,
+                'owner_id'   => $ownerId,
+                'client_redirect_uri' => $clientRedirectUri,
+                'created_at' => Carbon::now(),
+                'updated_at' => Carbon::now()
+            ]);
     }
 
     /**
@@ -121,12 +122,14 @@ class FluentSession extends FluentAdapter implements SessionInterface
      */
     public function associateScope(SessionEntity $session, ScopeEntity $scope)
     {
-        $this->getConnection()->table('oauth_session_scopes')->insert([
-            'session_id' => $session->getId(),
-            'scope_id'   => $scope->getId(),
-            'created_at' => Carbon::now(),
-            'updated_at' => Carbon::now()
-        ]);
+        DB::collection('oauth_sessions')
+            ->where('id', $session->getId())
+            ->push('scopes', [
+                'session_id' => $session->getId(),
+                'scope_id'   => $scope->getId(),
+                'created_at' => Carbon::now(),
+                'updated_at' => Carbon::now(),
+            ]);
     }
 
     /**
@@ -136,12 +139,8 @@ class FluentSession extends FluentAdapter implements SessionInterface
      */
     public function getByAuthCode(AuthCodeEntity $authCode)
     {
-        $allowedSessionIds = $this->getConnection()->table('oauth_auth_codes')
-                   ->where('id', $authCode->getId())
-                   ->pluck('session_id');
-
-        $result = $this->getConnection()->table('oauth_sessions')
-            ->whereIn('id', $allowedSessionIds)
+        $result = DB::colletion('oauth_sessions')
+            ->where('auth_code.id', $authCode->getId())
             ->first();
 
         if (is_null($result)) {

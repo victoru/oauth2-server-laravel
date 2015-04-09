@@ -60,51 +60,29 @@ class FluentClient extends FluentAdapter implements ClientInterface
      */
     public function get($clientId, $clientSecret = null, $redirectUri = null, $grantType = null)
     {
-        $query = null;
-        
+        $query = DB::collection('oauth_clients')
+            ->where('id', $clientId);
+
         if (! is_null($redirectUri) && is_null($clientSecret)) {
 
-            $allowedClientIds = $this->getConnection()->table('oauth_client_endpoints')
-                   ->where('redirect_uri', $redirectUri)
-                   ->pluck('client_id');
-
-            // var_dump($allowedClientIds);
-
-            $query = $this->getConnection()->table('oauth_clients')
-                   ->whereIn('id', $allowedClientIds)
-                   ->where('id', $clientId);
+            $query = $query->where('endpoints.redirect_uri', $redirectUri);
 
         } elseif (! is_null($clientSecret) && is_null($redirectUri)) {
 
-            $query = $this->getConnection()->table('oauth_clients')
-                   ->where('id', $clientId)
-                   ->where('secret', $clientSecret);
+            $query = $query->where('secret', $clientSecret);
 
         } elseif (! is_null($clientSecret) && ! is_null($redirectUri)) {
 
-            $allowedClientIds = $this->getConnection()->table('oauth_client_endpoints')
-                   ->where('redirect_uri', $redirectUri)
-                   ->pluck('client_id');
+            $query = $query
+                ->where('secret', $clientSecret)
+                ->where('endpoints.redirect_uri', $redirectUri);
 
-            // var_dump($allowedClientIds);
-
-            $query = $this->getConnection()->table('oauth_clients')
-                   ->whereIn('id', $allowedClientIds)
-                   ->where('id', $clientId)
-                   ->where('secret', $clientSecret);
         }
 
         if ($this->limitClientsToGrants === true and ! is_null($grantType)) {
 
-            $allowedGrantIds = $this->getConnection()->table('oauth_grants')
-                   ->where('id', $grantType)
-                   ->pluck('id');
+            $query = $query->where('grants.id', $grantType);
 
-            $allowedClientIds = $this->getConnection()->table('oauth_client_grants')
-                   ->whereIn('grant_id', $allowedGrantIds)
-                   ->pluck('client_id');
-
-            $query = $query->whereIn('id', $allowedClientIds);
         }
 
         $result = $query->first();
@@ -123,14 +101,16 @@ class FluentClient extends FluentAdapter implements ClientInterface
      */
     public function getBySession(SessionEntity $session)
     {
-        $allowedClientIds = $this->getConnection()->table('oauth_sessions')
-                   ->where('id', $session->getId())
-                   ->pluck('client_id');
+        $clientId = DB::collection('oauth_sessions')
+            ->where('id', $session->getId())
+            ->select('client_id')
+            ->first();
 
+        if (!is_null($clientId))
+            return null;
 
-        $result = $this->getConnection()->table('oauth_clients')
-                ->whereIn('id', '=', $allowedClientIds)
-                ->first();
+        $result = DB::collection('oauth_clients')
+            ->where('id', $clientId);
 
         if (is_null($result)) {
             return null;
@@ -147,13 +127,14 @@ class FluentClient extends FluentAdapter implements ClientInterface
      */
     public function create($name, $id, $secret)
     {
-        return $this->getConnection()->table('oauth_clients')->insertGetId([
-            'id'  => $id,
-            'name' => $name,
-            'secret'   => $secret,
-            'created_at' => Carbon::now(),
-            'updated_at' => Carbon::now()
-        ]);
+        return DB::collection('oauth_clients')
+            ->insertGetId([
+                'id'  => $id,
+                'name' => $name,
+                'secret'   => $secret,
+                'created_at' => Carbon::now(),
+                'updated_at' => Carbon::now()
+            ]);
     }
 
     /**

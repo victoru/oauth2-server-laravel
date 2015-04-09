@@ -55,7 +55,7 @@ class FluentScope extends FluentAdapter implements ScopeInterface
      * Example SQL query:
      *
      * <code>
-     * SELECT * FROM oauth_scopes WHERE scope = :scope
+     *     db.oauth_scopes.find( {scope: :scope} )
      * </code>
      *
      * @param  string     $scope     The scope
@@ -65,25 +65,22 @@ class FluentScope extends FluentAdapter implements ScopeInterface
      */
     public function get($scope, $grantType = null, $clientId = null)
     {
-         $query = $this->getConnection()->table('oauth_scopes')
-                    ->where('id', $scope);
+        $query = DB::collection('oauth_scopes')
+            ->where('id', $scope);
 
         if ($this->limitClientsToScopes === true and ! is_null($clientId)) {
-            $allowedScopeIds = $this->getConnection()->table('oauth_client_scopes')
-                   ->where('client_id', $clientId)
-                   ->pluck('scope_id');
+            $allowedScopeIds = DB::collection('oauth_clients')
+                ->where('client_id', $clientId)
+                ->select('scopes')
+                ->first();
 
-            $query = $query->whereIn('client_id', $allowedScopeIds);
+            $query = $query->whereIn('id', $allowedScopeIds);
         }
 
         if ($this->limitScopesToGrants === true and ! is_null($grantType)) {
-            $allowedGrantIds = $this->getConnection()->table('oauth_grants')
-                   ->where('id', $grantType)
-                   ->pluck('id');
-
-            $allowedScopeIds = $this->getConnection()->table('oauth_grant_scopes')
-                   ->whereIn('grant_id', $allowedGrantIds)
-                   ->pluck('scope_id');
+            $allowedScopeIds = DB::collection('oauth_grants')
+                ->where('id', $grantType)
+                ->select('scopes');
 
             $query = $query->whereIn('id', $allowedScopeIds);
         }
